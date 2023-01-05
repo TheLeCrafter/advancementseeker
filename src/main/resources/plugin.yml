@@ -1,0 +1,6 @@
+name: Advancementseeker
+version: '${version}'
+main: dev.thelecrafter.advancementseeker.SeekerPlugin
+api-version: 1.19
+authors: [ TheLeCrafter ]
+description: Hunt for advancements
