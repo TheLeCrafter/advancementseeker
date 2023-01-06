@@ -6,7 +6,6 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.Material;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
@@ -19,13 +18,13 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jetbrains.annotations.NotNull;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SeekerPlugin extends JavaPlugin implements Listener {
 
@@ -59,7 +58,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void formatChat(AsyncChatEvent event) {
+    public void formatChat(@NotNull AsyncChatEvent event) {
         event.renderer((source, sourceDisplayName, message, viewer) -> {
             if (advancements.size() == advancements.stream().filter(advancement -> source.getAdvancementProgress(advancement).isDone()).count()) {
                 return sourceDisplayName.append(Component.text(": ").color(NamedTextColor.DARK_GRAY)).append(message.colorIfAbsent(NamedTextColor.GOLD));
@@ -67,12 +66,12 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
         });
     }
     @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
+    public void onJoin(@NotNull PlayerJoinEvent event) {
         playerAdvancementSync(event.getPlayer());
     }
 
     @EventHandler
-    public void onAdvancementDone(PlayerAdvancementDoneEvent event) {
+    public void onAdvancementDone(@NotNull PlayerAdvancementDoneEvent event) {
         playerAdvancementSync(event.getPlayer());
     }
 
@@ -111,7 +110,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                         case 1000 -> enchantment = "Protection V";
                         case 750 -> enchantment = "Sharpness VI";
                         case 500 -> enchantment = "Efficiency VI";
-                        case 250 -> enchantment = "Fortune III";
+                        case 250 -> enchantment = "Fortune IV";
                         default -> enchantment = "Invalid Level. Report to TheLeCrafter";
                     }
                     player.sendMessage(Component.text("Du hast Level " + i + " erreicht und eine neue Verzauberung freigeschaltet!")
@@ -128,7 +127,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onServerListPing(PaperServerListPingEvent event) {
+    public void onServerListPing(@NotNull PaperServerListPingEvent event) {
         if (event.getClient().isLegacy() || event.getClient().getProtocolVersion() < 393) {
             event.setMotd("\u00a74Legacy Client version!\nUpdate to " + getServer().getMinecraftVersion());
             event.setVersion("Use " + getServer().getMinecraftVersion());
@@ -173,16 +172,72 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void setAnvilRecipes(PrepareAnvilEvent event) {
-        if (event.getInventory().getFirstItem() == null || event.getInventory().getSecondItem() == null || !event.getInventory().getFirstItem().hasItemMeta() || !event.getInventory().getSecondItem().hasItemMeta()) return;
-        EnchantmentStorageMeta first = (EnchantmentStorageMeta) event.getInventory().getFirstItem().getItemMeta();
-        EnchantmentStorageMeta second = (EnchantmentStorageMeta) event.getInventory().getSecondItem().getItemMeta();
-        if (first.getStoredEnchants().get(Enchantment.LOOT_BONUS_BLOCKS) == 3 && second.getStoredEnchants().get(Enchantment.LOOT_BONUS_BLOCKS) == 3) {
-            if (event.getViewers().stream().anyMatch(player -> advancements.stream().filter(advancement -> ((Player) player).getAdvancementProgress(advancement).isDone()).count() >= 250)) {
-                ItemStack result = new ItemStack(Material.ENCHANTED_BOOK);
-                result.editMeta(meta -> ((EnchantmentStorageMeta) meta).addStoredEnchant(Enchantment.LOOT_BONUS_BLOCKS, 4, true));
-                event.setResult(result);
-            }
+    public void setAnvilRecipes(@NotNull PrepareAnvilEvent event) {
+        if (event.getInventory().getFirstItem() == null || event.getInventory().getSecondItem() == null || !event.getInventory().getSecondItem().hasItemMeta()) return;
+        if (event.getResult() == null) return;
+        if (vanillaHandling(getEnchantsOfItem(event.getInventory().getFirstItem())) && vanillaHandling(getEnchantsOfItem(event.getInventory().getSecondItem()))) return;
+        ItemStack result = event.getInventory().getFirstItem();
+        if (event.getViewers().stream().anyMatch(human -> isApplicable((Player) human, getEnchantsOfItem(event.getInventory().getSecondItem()), result))) {
+            Map<Enchantment, Integer> enchantsToAdd = new HashMap<>();
+            getEnchantsOfItem(event.getInventory().getFirstItem()).forEach((enchantment, level) -> {
+                if (possibleEnchantments.contains(enchantment) && Objects.equals(level, getEnchantsOfItem(event.getInventory().getSecondItem()).get(enchantment)) && level < enchantment.getMaxLevel() + 2) {
+                    enchantsToAdd.put(enchantment, level+1);
+                } else enchantsToAdd.put(enchantment, level);
+            });
+            getEnchantsOfItem(event.getInventory().getSecondItem()).forEach((enchantment, level) -> {
+                if (getEnchantsOfItem(event.getInventory().getFirstItem()).containsKey(enchantment)) {
+                    if (level > getEnchantsOfItem(event.getInventory().getFirstItem()).get(enchantment)) {
+                        enchantsToAdd.put(enchantment, level);
+                    }
+                } else enchantsToAdd.put(enchantment, level);
+            });
+            event.setResult(addEnchantsToItem(result, enchantsToAdd));
+            event.getInventory().setRepairCost(30);
         }
+    }
+
+    private final List<Enchantment> possibleEnchantments = List.of(Enchantment.LOOT_BONUS_BLOCKS, Enchantment.DIG_SPEED, Enchantment.DAMAGE_ALL, Enchantment.PROTECTION_ENVIRONMENTAL);
+
+    public Map<Enchantment, Integer> getEnchantsOfItem(ItemStack item) {
+        if (!item.hasItemMeta()) return Map.of();
+        if (item.getItemMeta() instanceof EnchantmentStorageMeta meta) return meta.getStoredEnchants();
+        else return item.getItemMeta().getEnchants();
+    }
+
+    public ItemStack addEnchantsToItem(ItemStack item, Map<Enchantment, Integer> enchantments) {
+        ItemStack cloned = item.clone();
+        if (!cloned.hasItemMeta() || !(cloned.getItemMeta() instanceof EnchantmentStorageMeta meta)) {
+            cloned.addUnsafeEnchantments(enchantments);
+        } else {
+            enchantments.forEach((enchantment, level) -> meta.addStoredEnchant(enchantment, level, true));
+            cloned.setItemMeta(meta);
+        }
+        return cloned;
+    }
+
+    private boolean vanillaHandling(@NotNull Map<Enchantment, Integer> enchantmentLevels) {
+        AtomicBoolean vanilla = new AtomicBoolean(true);
+        enchantmentLevels.forEach((enchantment, level) -> {
+            if (possibleEnchantments.contains(enchantment) && (enchantment.getMaxLevel() == level || enchantment.getMaxLevel() + 1 == level || enchantment.getMaxLevel() + 2 == level)) {
+                vanilla.set(false);
+            }
+        });
+        return vanilla.get();
+    }
+
+    private boolean isApplicable(Player player, Map<Enchantment, Integer> enchantmentLevels, ItemStack applyingTo) {
+        if (applyingTo == null) return false;
+        long advancementsDone = advancements.stream().filter(advancement -> player.getAdvancementProgress(advancement).isDone()).count();
+        AtomicBoolean applicable = new AtomicBoolean(true);
+        enchantmentLevels.forEach((enchantment, level) -> {
+            if (possibleEnchantments.contains(enchantment)) {
+                if (enchantment.getMaxLevel() + 1 == level) {
+                    if (advancementsDone < advancements.size()) applicable.set(false);
+                } else if (enchantment.getMaxLevel() == level) {
+                    if (advancementsDone < (possibleEnchantments.indexOf(enchantment)+1) * 250L) applicable.set(false);
+                }
+            }
+        });
+        return applicable.get();
     }
 }
