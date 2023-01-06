@@ -34,8 +34,11 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
         Bukkit.advancementIterator().forEachRemaining(advancements::add);
         getLogger().info("Loaded " + advancements.size() + " advancements!");
         saveDefaultConfig();
+        getConfig().setInlineComments("start-unix-timestamp", List.of("Edit this when server is stopped"));
+        getConfig().setInlineComments("data", List.of("Do not edit!"));
+        saveConfig();
         getLogger().info("Loading start date...");
-        startDate = new Date(getConfig().getLong("start-unix-timestamp")).toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+        startDate = new Date(getConfig().getLong("start-unix-timestamp")).toInstant().atZone(ZoneId.of("Europe/Berlin")).toLocalDateTime();
         getLogger().info("Start date is " + startDate.toString() + " [Past: " + (LocalDateTime.now().isAfter(startDate) ? "Yes" : "No") + "]");
         Bukkit.getPluginManager().registerEvents(this, this);
     }
@@ -43,29 +46,77 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onPreJoin(AsyncPlayerPreLoginEvent event) {
         if (startDate.isAfter(LocalDateTime.now())) {
-            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, Component.text("Not yet released!").color(NamedTextColor.RED));
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, Component
+                            .text("Hey! Nicht so schnell! :)")
+                            .color(NamedTextColor.RED)
+                    );
         }
     }
 
     @EventHandler
     public void formatChat(AsyncChatEvent event) {
-        event.renderer((source, sourceDisplayName, message, viewer) -> sourceDisplayName.append(Component.text(": ").color(NamedTextColor.DARK_GRAY)).append(message.colorIfAbsent(NamedTextColor.WHITE)));
+        event.renderer((source, sourceDisplayName, message, viewer) -> {
+            if (advancements.size() == advancements.stream().filter(advancement -> source.getAdvancementProgress(advancement).isDone()).count()) {
+                return sourceDisplayName.append(Component.text(": ").color(NamedTextColor.DARK_GRAY)).append(message.colorIfAbsent(NamedTextColor.GOLD));
+            } else return sourceDisplayName.append(Component.text(": ").color(NamedTextColor.DARK_GRAY)).append(message.colorIfAbsent(NamedTextColor.WHITE));
+        });
     }
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        formatPlayer(event.getPlayer());
+        playerAdvancementSync(event.getPlayer());
     }
 
     @EventHandler
     public void onAdvancementDone(PlayerAdvancementDoneEvent event) {
-        formatPlayer(event.getPlayer());
+        playerAdvancementSync(event.getPlayer());
     }
 
-    void formatPlayer(Player player) {
+    void playerAdvancementSync(Player player) {
         long advancementsDone =  advancements.stream().filter(advancement -> player.getAdvancementProgress(advancement).isDone()).count();
         TextColor color;
-        if (advancements.size() == advancementsDone) color = NamedTextColor.GOLD;
-        else color = colorList.get((int) Math.floorDiv(advancementsDone, 250L));
+        if (advancements.size() == advancementsDone) {
+            color = NamedTextColor.GOLD;
+            if (getConfig().getInt("data." + player.getUniqueId() + ".lastLevelMessage") < advancementsDone) {
+                getConfig().set("data." + player.getUniqueId() + ".lastLevelMessage", advancementsDone);
+                saveConfig();
+                player.sendMessage(Component.text("Du hast das maximale Level erreicht und neue Verzauberungen freigeschaltet! Glückwunsch!")
+                        .append(Component.newline())
+                        .append(Component.text("Verzauberungen:"))
+                        .append(Component.newline())
+                        .append(Component.text("    Protection VI"))
+                        .append(Component.newline())
+                        .append(Component.text("    Sharpness VII"))
+                        .append(Component.newline())
+                        .append(Component.text("    Efficiency VII"))
+                        .append(Component.newline())
+                        .append(Component.text("    Fortune IV"))
+                        .color(NamedTextColor.GOLD)
+                );
+                Bukkit.broadcast(player.displayName().append(Component.text(" hat das maximale Level erreicht!").color(NamedTextColor.GOLD)));
+            }
+        }
+        else {
+            color = colorList.get((int) Math.floorDiv(advancementsDone, 250L));
+            for (int i = 1000; i >= 250; i = i-250) {
+                if (advancementsDone >= i && getConfig().getInt("data." + player.getUniqueId() + ".lastLevelMessage") < i) {
+                    getConfig().set("data." + player.getUniqueId() + ".lastLevelMessage", i);
+                    saveConfig();
+                    String enchantment;
+                    switch (i) {
+                        case 1000 -> enchantment = "Protection V";
+                        case 750 -> enchantment = "Sharpness VI";
+                        case 500 -> enchantment = "Efficiency VI";
+                        case 250 -> enchantment = "Fortune III";
+                        default -> enchantment = "Invalid Level. Report to TheLeCrafter";
+                    }
+                    player.sendMessage(Component.text("Du hast Level " + i + " erreicht und eine neue Verzauberung freigeschaltet!")
+                            .color(NamedTextColor.GOLD)
+                            .append(Component.newline())
+                            .append(Component.text("    Verzauberung: " + enchantment))
+                    );
+                }
+            }
+        }
         Component newName = Component.text("["+advancementsDone+"] ").append(player.name()).color(color);
         player.displayName(newName);
         player.playerListName(newName);
@@ -85,21 +136,21 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
         }
         event.motd(
                 Component
-                        .text("                       \u1d04\u0280\u1d00\ua730\u1d1b\u1d07\u0280 \ua731\u1d0d\u1d18")
+                        .text("                       ᴄʀᴀꜰᴛᴇʀ ꜱᴍᴘ")
                         .color(NamedTextColor.GOLD)
         );
         if (LocalDateTime.now().isBefore(startDate)) {
             long difference = ChronoUnit.MINUTES.between(LocalDateTime.now(), startDate);
-            long daysUntil = Math.floorDiv(difference, 60*24)-1;
-            long hoursUntil = Math.floorDiv(difference - (60*24*daysUntil), 60)-1;
-            long minutesUntil = difference - ((hoursUntil+1)*60) - (daysUntil*60*24);
-            event.setVersion("\u0455\u1d0f\u1d0f\u0274\u1d1b\u1d0d");
+            long daysUntil = Math.floorDiv(difference, 60*24);
+            long hoursUntil = Math.floorDiv(difference - (60*24*daysUntil), 60);
+            long minutesUntil = difference - ((hoursUntil)*60) - (daysUntil*60*24);
+            event.setVersion("ѕᴏᴏɴᴛᴍ");
             event.setProtocolVersion(Integer.MAX_VALUE);
             event.motd(
                     event.motd()
                             .append(Component.newline())
                             .append(Component
-                                    .text("        \u0274\u1d0f\u1d04\u029c " + daysUntil + " \u1d1b\u1d00\u0262\u1d07 " + hoursUntil + " \u0455\u1d1b\u1d1c\u0274\u1d05\u1d07\u0274 " + minutesUntil + " \u1d0d\u026a\u0274\u1d1c\u1d1b\u1d07\u0274")
+                                    .text("        ɴᴏᴄʜ " + daysUntil + " ᴛᴀɢᴇ " + hoursUntil + " ѕᴛᴜɴᴅᴇɴ " + minutesUntil + " ᴍɪɴᴜᴛᴇɴ")
                                     .color(NamedTextColor.RED)
                             )
             );
@@ -108,7 +159,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                     event.motd()
                             .append(Component.newline())
                             .append(Component
-                                    .text("                      \u0274\u1d0f\u1d21 \u0280\u1d07\u029f\u1d07\u1d00\u0455\u1d07\u1d05")
+                                    .text("                      ɴᴏᴡ ʀᴇʟᴇᴀѕᴇᴅ")
                                     .color(NamedTextColor.YELLOW)
 
                             )
