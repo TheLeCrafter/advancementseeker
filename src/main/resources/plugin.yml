@@ -1,4 +1,4 @@
-name: Advancementseeker
+name: AdvancementSeeker
 version: '${version}'
 main: dev.thelecrafter.advancementseeker.SeekerPlugin
 api-version: 1.19
