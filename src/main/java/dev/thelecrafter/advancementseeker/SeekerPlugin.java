@@ -6,13 +6,18 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.advancement.Advancement;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.time.LocalDateTime;
@@ -164,6 +169,20 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
 
                             )
             );
+        }
+    }
+
+    @EventHandler
+    public void setAnvilRecipes(PrepareAnvilEvent event) {
+        if (event.getInventory().getFirstItem() == null || event.getInventory().getSecondItem() == null || !event.getInventory().getFirstItem().hasItemMeta() || !event.getInventory().getSecondItem().hasItemMeta()) return;
+        EnchantmentStorageMeta first = (EnchantmentStorageMeta) event.getInventory().getFirstItem().getItemMeta();
+        EnchantmentStorageMeta second = (EnchantmentStorageMeta) event.getInventory().getSecondItem().getItemMeta();
+        if (first.getStoredEnchants().get(Enchantment.LOOT_BONUS_BLOCKS) == 3 && second.getStoredEnchants().get(Enchantment.LOOT_BONUS_BLOCKS) == 3) {
+            if (event.getViewers().stream().anyMatch(player -> advancements.stream().filter(advancement -> ((Player) player).getAdvancementProgress(advancement).isDone()).count() >= 250)) {
+                ItemStack result = new ItemStack(Material.ENCHANTED_BOOK);
+                result.editMeta(meta -> ((EnchantmentStorageMeta) meta).addStoredEnchant(Enchantment.LOOT_BONUS_BLOCKS, 4, true));
+                event.setResult(result);
+            }
         }
     }
 }
