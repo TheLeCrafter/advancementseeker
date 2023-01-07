@@ -5,6 +5,7 @@ import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.advancement.Advancement;
 import org.bukkit.enchantments.Enchantment;
@@ -68,6 +69,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onJoin(@NotNull PlayerJoinEvent event) {
         playerAdvancementSync(event.getPlayer());
+        event.getPlayer().sendPlayerListHeaderAndFooter(Component.text("ᴄʀᴀꜰᴛᴇʀ ꜱᴍᴘ").color(NamedTextColor.GOLD), Component.text("ᴘʟᴀʏ.ᴛʜᴇʟᴇᴄʀᴀꜰᴛᴇʀ.ᴅᴇᴠ").color(NamedTextColor.YELLOW));
     }
 
     @EventHandler
@@ -76,8 +78,9 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     }
 
     void playerAdvancementSync(Player player) {
-        long advancementsDone =  advancements.stream().filter(advancement -> player.getAdvancementProgress(advancement).isDone()).count();
+        long advancementsDone = advancements.stream().filter(advancement -> player.getAdvancementProgress(advancement).isDone()).count();
         TextColor color;
+        boolean broadcast = false;
         if (advancements.size() == advancementsDone) {
             color = NamedTextColor.GOLD;
             if (getConfig().getInt("data." + player.getUniqueId() + ".lastLevelMessage") < advancementsDone) {
@@ -87,16 +90,16 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                         .append(Component.newline())
                         .append(Component.text("Verzauberungen:"))
                         .append(Component.newline())
-                        .append(Component.text("    Protection VI"))
+                        .append(MiniMessage.miniMessage().deserialize("    <rainbow>Protection VI</rainbow>"))
                         .append(Component.newline())
-                        .append(Component.text("    Sharpness VII"))
+                        .append(MiniMessage.miniMessage().deserialize("    <rainbow>Sharpness VII</rainbow>"))
                         .append(Component.newline())
-                        .append(Component.text("    Efficiency VII"))
+                        .append(MiniMessage.miniMessage().deserialize("    <rainbow>Efficiency VII</rainbow>"))
                         .append(Component.newline())
-                        .append(Component.text("    Fortune IV"))
+                        .append(MiniMessage.miniMessage().deserialize("    <rainbow>Fortune IV</rainbow>"))
                         .color(NamedTextColor.GOLD)
                 );
-                Bukkit.broadcast(player.displayName().append(Component.text(" hat das maximale Level erreicht!").color(NamedTextColor.GOLD)));
+                broadcast = true;
             }
         }
         else {
@@ -110,13 +113,13 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                         case 1000 -> enchantment = "Protection V";
                         case 750 -> enchantment = "Sharpness VI";
                         case 500 -> enchantment = "Efficiency VI";
-                        case 250 -> enchantment = "Fortune IV";
+                        case 250 -> enchantment = "Fortune V";
                         default -> enchantment = "Invalid Level. Report to TheLeCrafter";
                     }
                     player.sendMessage(Component.text("Du hast Level " + i + " erreicht und eine neue Verzauberung freigeschaltet!")
                             .color(NamedTextColor.GOLD)
                             .append(Component.newline())
-                            .append(Component.text("    Verzauberung: " + enchantment))
+                            .append(Component.text("    Verzauberung: ").append(MiniMessage.miniMessage().deserialize("<rainbow>" + enchantment)))
                     );
                 }
             }
@@ -124,6 +127,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
         Component newName = Component.text("["+advancementsDone+"] ").append(player.name()).color(color);
         player.displayName(newName);
         player.playerListName(newName);
+        if (broadcast) Bukkit.broadcast(player.displayName().append(Component.text(" hat das maximale Level erreicht!").color(NamedTextColor.GOLD)));
     }
 
     @EventHandler
@@ -158,6 +162,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                                     .color(NamedTextColor.RED)
                             )
             );
+            event.setMaxPlayers(0);
         } else {
             event.motd(
                     event.motd()
@@ -175,9 +180,15 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     public void setAnvilRecipes(@NotNull PrepareAnvilEvent event) {
         if (event.getInventory().getFirstItem() == null || event.getInventory().getSecondItem() == null || !event.getInventory().getSecondItem().hasItemMeta()) return;
         if (event.getResult() == null) return;
-        if (vanillaHandling(getEnchantsOfItem(event.getInventory().getFirstItem())) && vanillaHandling(getEnchantsOfItem(event.getInventory().getSecondItem()))) return;
-        ItemStack result = event.getInventory().getFirstItem();
-        if (event.getViewers().stream().anyMatch(human -> isApplicable((Player) human, getEnchantsOfItem(event.getInventory().getSecondItem()), result))) {
+        if (vanillaHandling(getEnchantsOfItem(event.getInventory().getFirstItem()))) {
+            if (vanillaHandling(getEnchantsOfItem(event.getInventory().getSecondItem()))) return;
+            AtomicBoolean isVanilla = new AtomicBoolean(true);
+            getEnchantsOfItem(event.getInventory().getSecondItem()).forEach((enchantment, level) -> {
+                if (enchantment.getMaxLevel() < level) isVanilla.set(false);
+            });
+            if (isVanilla.get()) return;
+        }
+        if (event.getViewers().stream().anyMatch(human -> isApplicable((Player) human, getEnchantsOfItem(event.getInventory().getSecondItem()), event.getInventory().getFirstItem()))) {
             Map<Enchantment, Integer> enchantsToAdd = new HashMap<>();
             getEnchantsOfItem(event.getInventory().getFirstItem()).forEach((enchantment, level) -> {
                 if (possibleEnchantments.contains(enchantment) && Objects.equals(level, getEnchantsOfItem(event.getInventory().getSecondItem()).get(enchantment)) && level < enchantment.getMaxLevel() + 2) {
@@ -191,7 +202,13 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
                     }
                 } else enchantsToAdd.put(enchantment, level);
             });
-            event.setResult(addEnchantsToItem(result, enchantsToAdd));
+            ItemStack result = addEnchantsToItem(event.getInventory().getFirstItem(), enchantsToAdd);
+            result.editMeta(meta ->{
+                if (event.getInventory().getRenameText() != null && !event.getInventory().getRenameText().isBlank()) {
+                    meta.displayName(Component.text(event.getInventory().getRenameText()));
+                }
+            });
+            event.setResult(result);
             event.getInventory().setRepairCost(30);
         }
     }
@@ -204,7 +221,7 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
         else return item.getItemMeta().getEnchants();
     }
 
-    public ItemStack addEnchantsToItem(ItemStack item, Map<Enchantment, Integer> enchantments) {
+    public @NotNull ItemStack addEnchantsToItem(@NotNull ItemStack item, Map<Enchantment, Integer> enchantments) {
         ItemStack cloned = item.clone();
         if (!cloned.hasItemMeta() || !(cloned.getItemMeta() instanceof EnchantmentStorageMeta meta)) {
             cloned.addUnsafeEnchantments(enchantments);
