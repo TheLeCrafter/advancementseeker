@@ -16,6 +16,7 @@ import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerResourcePackStatusEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -70,6 +71,17 @@ public final class SeekerPlugin extends JavaPlugin implements Listener {
     public void onJoin(@NotNull PlayerJoinEvent event) {
         playerAdvancementSync(event.getPlayer());
         event.getPlayer().sendPlayerListHeaderAndFooter(Component.text("ᴄʀᴀꜰᴛᴇʀ ꜱᴍᴘ").color(NamedTextColor.GOLD), Component.text("ᴘʟᴀʏ.ᴛʜᴇʟᴇᴄʀᴀꜰᴛᴇʀ.ᴅᴇᴠ").color(NamedTextColor.YELLOW));
+    }
+
+    @EventHandler
+    public void onResourcePack(PlayerResourcePackStatusEvent event) {
+        Component header;
+        if (event.getStatus().equals(PlayerResourcePackStatusEvent.Status.SUCCESSFULLY_LOADED)) {
+            header = Component.text("\ue238\n\n");
+        } else {
+            header = Component.text("\nᴄʀᴀꜰᴛᴇʀ ꜱᴍᴘ\n").color(NamedTextColor.GOLD);
+        }
+        event.getPlayer().sendPlayerListHeaderAndFooter(header, Component.text("\nᴘʟᴀʏ.ᴛʜᴇʟᴇᴄʀᴀꜰᴛᴇʀ.ᴅᴇᴠ").color(NamedTextColor.YELLOW));
     }
 
     @EventHandler
